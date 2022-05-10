@@ -1,10 +1,10 @@
 use std::{error::Error, str};
 
 use async_std::{
-    io::{self, prelude::BufReadExt},
+    io::{self, prelude::BufReadExt, stdout},
     process,
 };
-use futures::{select, StreamExt};
+use futures::{select, AsyncWriteExt, StreamExt};
 use libp2p::{
     floodsub::{Floodsub, FloodsubEvent, FloodsubMessage, Topic},
     identity,
@@ -13,6 +13,7 @@ use libp2p::{
     Multiaddr, NetworkBehaviour, PeerId, Swarm,
 };
 use log::{error, info, warn};
+use termion::{color, style};
 
 const ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
 
@@ -69,7 +70,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let mut swarm = Swarm::new(transport, behaviour, local_peer_id);
-
     swarm.listen_on(ADDRESS.parse()?)?;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
@@ -96,9 +96,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     swarm.dial(addr)?;
                     info!("You will get notice once connection is established.");
-
                     continue;
                 }
+
+                print_prompt(local_peer_id).await;
 
                 swarm
                     .behaviour_mut()
@@ -122,12 +123,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 },
                 SwarmEvent::Behaviour(OutEvent::Floodsub(FloodsubEvent::Subscribed { peer_id, .. })) => {
                     info!("Chat started with peer {}. Say something!", peer_id);
+                    print_prompt(local_peer_id).await;
                 },
                 SwarmEvent::Behaviour(OutEvent::Floodsub(FloodsubEvent::Message(FloodsubMessage { data, source, .. }))) => {
-                    info!("[{}]: {}", source, str::from_utf8(&data).unwrap());
+                    println!("\r{}{}", format_prompt(source, color::Magenta), str::from_utf8(&data).unwrap());
+                    print_prompt(local_peer_id).await;
                 }
                 _ => {}
             }
         }
     }
+}
+
+fn format_prompt<T>(peer_id: PeerId, color: T) -> String
+where
+    T: color::Color,
+{
+    format!(
+        "{}{}[{}]:{}{} ",
+        style::Bold,
+        color::Fg(color),
+        peer_id,
+        color::Fg(color::Reset),
+        style::Reset
+    )
+}
+
+async fn print_prompt(peer_id: PeerId) {
+    print!("{}", format_prompt(peer_id, color::Cyan));
+    stdout().flush().await.unwrap();
 }

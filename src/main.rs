@@ -12,7 +12,7 @@ use libp2p::{
     swarm::SwarmEvent,
     Multiaddr, NetworkBehaviour, PeerId, Swarm,
 };
-use log::error;
+use log::{error, info, warn};
 
 const ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
 
@@ -50,8 +50,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut connection_established = false;
 
-    println!("Hello, Welcome to Chakra. Enter address of a person or wait for another person to establish connection with you.");
-    println!("Your peer id is: {}", local_peer_id);
+    info!("Hello, Welcome to Chakra. Enter address of a person or wait for another person to establish connection with you.");
+    info!("Your peer id is: {}", local_peer_id);
 
     let transport = libp2p::development_transport(local_key).await?;
 
@@ -77,22 +77,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         select! {
             line = stdin.select_next_some() => {
-                if let Ok(line) = line {
-                    if !connection_established {
-                        if let Ok(addr) = line.parse::<Multiaddr>() {
-                            swarm.dial(addr)?;
-                        }
-                    } else {
-                        swarm
-                            .behaviour_mut()
-                            .floodsub
-                            .publish(topic.clone(), line.as_bytes());
-                    }
+                let line = match line {
+                    Ok(line) => line,
+                    Err(_) => {
+                        warn!("Something went wrong while reading the line, try again!");
+                        continue;
+                    },
+                };
+
+                if !connection_established {
+                    let addr: Multiaddr = match line.parse() {
+                        Ok(addr) => addr,
+                        Err(_) => {
+                            warn!("Entered string is not an address, try again!");
+                            continue;
+                        },
+                    };
+
+                    swarm.dial(addr)?;
+                    info!("You will get notice once connection is established.");
+
+                    continue;
                 }
+
+                swarm
+                    .behaviour_mut()
+                    .floodsub
+                    .publish(topic.clone(), line.as_bytes());
             },
             event = swarm.select_next_some() => match event {
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("One of your possible addresses is {}", address)
+                    info!("One of your possible addresses is {}", address)
                 }
                 SwarmEvent::Behaviour(OutEvent::Ping(PingEvent { peer, .. })) => {
                     if !connection_established {
@@ -101,15 +116,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             .floodsub
                             .add_node_to_partial_view(peer);
 
-                        println!("Connection established with {}", peer);
+                        info!("Connection established with {}", peer);
                         connection_established = true;
                     }
                 },
                 SwarmEvent::Behaviour(OutEvent::Floodsub(FloodsubEvent::Subscribed { peer_id, .. })) => {
-                    println!("Chat started with peer {}. Say something!", peer_id);
+                    info!("Chat started with peer {}. Say something!", peer_id);
                 },
                 SwarmEvent::Behaviour(OutEvent::Floodsub(FloodsubEvent::Message(FloodsubMessage { data, source, .. }))) => {
-                    println!("> [{}]: {}", source, str::from_utf8(&data).unwrap());
+                    info!("[{}]: {}", source, str::from_utf8(&data).unwrap());
                 }
                 _ => {}
             }

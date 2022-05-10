@@ -13,7 +13,7 @@ use libp2p::{
     Multiaddr, NetworkBehaviour, PeerId, Swarm,
 };
 use log::{error, info, warn};
-use termion::{color, style};
+use termion::{clear, color, style};
 
 const ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
 
@@ -126,6 +126,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     print_prompt(local_peer_id).await;
                 },
                 SwarmEvent::Behaviour(OutEvent::Floodsub(FloodsubEvent::Message(FloodsubMessage { data, source, .. }))) => {
+                    print!("{}", clear::CurrentLine);
                     println!("\r{}{}", format_prompt(source, color::Magenta), str::from_utf8(&data).unwrap());
                     print_prompt(local_peer_id).await;
                 }
